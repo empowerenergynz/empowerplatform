@@ -1,0 +1,20 @@
+<?php
+
+// See https://www.algolia.com/doc/framework-integration/laravel/indexing/configure-index/?client=php for info
+
+return [
+    'searchableAttributes' => [
+        // all
+        'name',
+
+        // Users
+        'email', 'phone_number',
+
+        // Locations
+        'address',
+    ],
+
+    'customRanking' => null,
+
+    'attributesForFaceting' => ['_type'],
+];

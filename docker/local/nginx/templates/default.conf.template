@@ -1,0 +1,73 @@
+upstream backend {
+    server ${BACKEND_ADDRESS}:9000;
+}
+
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+
+    proxy_read_timeout 600;
+    proxy_send_timeout 600;
+    proxy_connect_timeout 600;
+
+    send_timeout 600;
+    client_max_body_size 100M;
+
+    root /app/public;
+
+    proxy_buffer_size   4096k;
+    proxy_buffers   128 4096k;
+    proxy_busy_buffers_size   4096k;
+
+    # Add index.php to the list if you are using PHP
+    index index.php index.html index.htm;
+
+    location / {
+        # proxy_read_timeout 600;
+        # proxy_send_timeout 600;
+        # proxy_connect_timeout 600;
+        # send_timeout 600;
+        # First attempt to serve request as file, then
+        # as directory, then fall back to displaying a 404.
+        # try_files $uri $uri/ =404;
+        try_files $uri $uri/ /index.php$is_args$args;
+    }
+
+    gzip_vary on;
+    gzip on;
+    gzip_proxied any;
+    gzip_buffers  4 32k;
+    gzip_types    application/javascript application/x-javascript text/javascript text/css image/svg+xml image/webp image/png image/jpeg image/gif application/rss+xml image/x-icon application/pdf application/x-font-woff font/woff application/font-woff2 application/json;
+
+    # pass PHP scripts to FastCGI server
+    #
+    location ~ \.php$ {
+        proxy_read_timeout 600;
+        proxy_send_timeout 600;
+        proxy_connect_timeout 600;
+
+        proxy_buffer_size   4096k;
+        proxy_buffers   128 4096k;
+        proxy_busy_buffers_size   4096k;
+        fastcgi_pass backend;
+        send_timeout 600;
+
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        fastcgi_param SCRIPT_NAME $fastcgi_script_name;
+        fastcgi_read_timeout 3600s;
+        # include snippets/fastcgi-php.conf;
+        fastcgi_index index.php;
+        include fastcgi_params;
+
+        fastcgi_buffers 16 16k;
+        fastcgi_buffer_size 32k;
+    }
+
+    # deny access to .htaccess files, if Apache's document root
+    # concurs with nginx's one
+    #
+    location ~ /\.ht {
+        deny all;
+    }
+}

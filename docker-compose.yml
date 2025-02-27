@@ -1,0 +1,65 @@
+services:
+    php:
+        build:
+            context: .
+            dockerfile: ./docker/local/php/Dockerfile
+        working_dir: "/app"
+        command: "php-fpm"
+        environment:
+            PHP_IDE_CONFIG: "serverName=${APP_HOST}"
+        volumes:
+            - ~/.composer-docker/cache:/root/.composer/cache:delegated
+            - ./docker/local/php/config/php.ini:/usr/local/etc/php/php.ini
+            - ./:/app:delegated
+        networks:
+            db-bridge:
+            app-bridge:
+                aliases:
+                    - ${APP_HOST}.php
+    nginx:
+        image: nginx:latest
+        depends_on:
+            - php
+        ports:
+            - "80:80"
+            - "443:443"
+        environment:
+            APP_HOST: ${APP_HOST}
+            FASTCGI_READ_TIMEOUT: 3600s
+            BACKEND_ADDRESS: php
+        volumes:
+            - ./:/app:delegated
+            - ./docker/local/nginx/templates:/etc/nginx/templates
+        labels:
+            traefik.enable: true
+            traefik.http.routers.empower-energy.rule: Host(`${APP_HOST}`)
+            traefik.http.routers.empower-energy.entrypoints: http,https
+            traefik.http.routers.empower-energy.tls: true
+        networks:
+            default:
+                aliases:
+                    - ${APP_HOST}.nginx
+            app-bridge:
+                aliases:
+                    - ${APP_HOST}
+    pgsql:
+        image: postgres:13.3
+        ports:
+            - '5432:5432'
+        environment:
+            POSTGRES_PASSWORD: ${DB_PASSWORD}
+            POSTGRES_USER: ${DB_USERNAME}
+            POSTGRES_DB: ${DB_DATABASE}
+        volumes:
+            - postgresql-data:/var/lib/postgresql/data
+        networks:
+            - db-bridge
+            - app-bridge
+
+volumes:
+    postgresql-data:
+networks:
+    app-bridge:
+        external: true
+    db-bridge:
+        external: true

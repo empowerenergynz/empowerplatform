@@ -1,0 +1,55 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Create ChatBot for CodePipeline Slack Notifications"
+Parameters:
+  Environment:
+    Type: String
+    Default: test
+    Description: Environment name
+    AllowedValues:
+      - test
+      - production
+      - stage
+  NotificationResource:
+    Type: String
+    Description: ARN of the resource to associate with the notification rule
+    AllowedPattern: "^arn:aws[^:\\s]*:[^:\\s]*:[^:\\s]*:[0-9]{12}:[^\\s]+$"
+  NotificationTargetType:
+    Type: String
+    Description: Can be an Amazon Simple Notification Service (SNS) topic or AWS Chatbot client.
+    Default: AWSChatbotSlack
+    AllowedValues:
+      - AWSChatbotSlack
+      - SNS
+  NotificationTargetAddress:
+    Type: String
+    Description: ARN of the AWS Chatbot topic or AWS Chatbot client.
+  EventTypesSucceeded:
+    Type: CommaDelimitedList
+    Default: codepipeline-pipeline-pipeline-execution-succeeded
+    Description: A list of event types associated with this notification rule for success
+  EventTypesFailed:
+    Type: CommaDelimitedList
+    Default: codepipeline-pipeline-pipeline-execution-failed
+    Description: A list of event types associated with this notification rule for failure
+
+Resources:
+  CodePipelineSucceededNotifications:
+    Type: 'AWS::CodeStarNotifications::NotificationRule'
+    Properties:
+      Name: !Sub "${Environment} Deployment Succeeded"
+      DetailType: BASIC
+      Resource: !Ref NotificationResource
+      EventTypeIds: !Ref EventTypesSucceeded
+      Targets:
+        - TargetType: !Ref NotificationTargetType
+          TargetAddress: !Ref NotificationTargetAddress
+  CodePipelineFailedNotifications:
+    Type: 'AWS::CodeStarNotifications::NotificationRule'
+    Properties:
+      Name: !Sub "${Environment} Deployment Failed"
+      DetailType: BASIC
+      Resource: !Ref NotificationResource
+      EventTypeIds: !Ref EventTypesFailed
+      Targets:
+        - TargetType: !Ref NotificationTargetType
+          TargetAddress: !Ref NotificationTargetAddress

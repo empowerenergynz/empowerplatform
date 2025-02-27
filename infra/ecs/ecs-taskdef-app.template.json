@@ -1,0 +1,132 @@
+{
+  "containerDefinitions": [
+    {
+      "essential": true,
+      "image": "public.ecr.aws/aws-observability/aws-for-fluent-bit:latest",
+      "name": "log_router",
+      "firelensConfiguration": {
+        "type": "fluentbit",
+        "options": { "enable-ecs-log-metadata": "true" }
+      }
+    },
+    {
+      "name": "php",
+      "image": "${REPOSITORY_URI_PHP}:${IMAGE_TAG}",
+      "cpu": 0,
+      "portMappings": [],
+      "essential": true,
+      "environment": [],
+      "secrets": [
+        {
+          "valueFrom": "/${PROJECT_NAME}/${APP_ENV}/.env",
+          "name": "ENV_PARAMETERS"
+        }
+      ],
+      "command": [
+        "/bin/bash",
+        "-c",
+        "/app/ecs-start.sh --migrate"
+      ],
+      "mountPoints": [
+        {
+          "sourceVolume": "storage",
+          "containerPath": "/app/storage"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awsfirelens",
+        "secretOptions": [
+          {
+            "valueFrom": "DATADOG_KEY",
+            "name": "apikey"
+          }
+        ],
+        "options": {
+          "Host": "http-intake.logs.datadoghq.eu",
+          "provider": "ecs",
+          "dd_service": "${PROJECT_NAME}-${APP_ENV}-php",
+          "TLS": "on",
+          "dd_source": "php",
+          "Name": "datadog",
+          "dd_tags": "log:fluentbit,project:${PROJECT_NAME},env:${APP_ENV}"
+        }
+      }
+    },
+    {
+      "name": "nginx",
+      "image": "${REPOSITORY_URI_NGINX}:${IMAGE_TAG}",
+      "cpu": 0,
+      "portMappings": [],
+      "command": [],
+      "essential": true,
+      "dependsOn": [
+        {
+          "containerName": "php",
+          "condition": "START"
+        }
+      ],
+      "environment": [
+        {
+          "name": "BACKEND_ADDRESS",
+          "value": "localhost"
+        }
+      ],
+      "mountPoints": [],
+      "volumesFrom": [],
+      "logConfiguration": {
+        "logDriver": "awsfirelens",
+        "secretOptions": [
+          {
+            "valueFrom": "DATADOG_KEY",
+            "name": "apikey"
+          }
+        ],
+        "options": {
+          "Host": "http-intake.logs.datadoghq.eu",
+          "provider": "ecs",
+          "dd_service": "${PROJECT_NAME}-${APP_ENV}-nginx",
+          "TLS": "on",
+          "dd_source": "nginx",
+          "Name": "datadog",
+          "dd_tags": "log:fluentbit,project:${PROJECT_NAME},env:${APP_ENV}"
+        }
+      }
+    }
+  ],
+  "family": "${PROJECT_NAME}-app",
+  "executionRoleArn": "arn:aws:iam::${AWS_ACCOUNT_ID}:role/${PROJECT_NAME}-${APP_ENV}-ecs-role",
+  "networkMode": "awsvpc",
+  "volumes": [
+    {
+      "fsxWindowsFileServerVolumeConfiguration": null,
+      "efsVolumeConfiguration": {
+        "transitEncryptionPort": null,
+        "fileSystemId": "${FILE_SYSTEM_ID}",
+        "authorizationConfig": {
+          "iam": "ENABLED",
+          "accessPointId": null
+        },
+        "transitEncryption": "ENABLED"
+      },
+      "name": "storage",
+      "host": null,
+      "dockerVolumeConfiguration": null
+    }
+  ],
+  "placementConstraints": [],
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "1024",
+  "memory": "2048",
+  "tags": [
+    {
+      "key": "Project",
+      "value": "${PROJECT_NAME}"
+    },
+    {
+      "key": "Environment",
+      "value": "${APP_ENV}"
+    }
+  ]
+}

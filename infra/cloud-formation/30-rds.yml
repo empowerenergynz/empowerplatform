@@ -1,0 +1,167 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Create RDS for empower-energy"
+Parameters:
+  ProjectEnvironment:
+    Type: "String"
+    Default: "test"
+    Description: "Environment for project"
+    AllowedValues: [ "production", "stage", "test" ]
+
+  VPC:
+    Type: "AWS::EC2::VPC::Id"
+    Description: "VPC of project"
+
+  PrivateSubnets:
+    Type: "List<AWS::EC2::Subnet::Id>"
+    Description: "Private Subnets of project"
+
+  DBInstanceIdentifier:
+    Default: "empower-energy-env"
+    Description: "The RDS instance ID"
+    Type: "String"
+    MinLength: "1"
+    MaxLength: "64"
+    AllowedPattern: "[a-zA-Z0-9-]*"
+    ConstraintDescription: "must begin with a letter and contain only alphanumeric characters and dash (-) limited to 64 characters"
+
+  DBInstanceSize:
+    Type: "String"
+    Default: "db.t3.micro"
+    Description: "DB Instance Size"
+    AllowedValues:
+      - db.t3.micro
+      - db.t3.small
+      - db.t3.medium
+      - db.t3.large
+
+  DBName:
+    Description: "The database name"
+    Default: "empowerenergy"
+    Type: "String"
+    MinLength: "1"
+    MaxLength: "64"
+    AllowedPattern: "[a-zA-Z0-9_]*"
+    ConstraintDescription: "must begin with a letter and contain only alphanumeric characters"
+
+  DBUser:
+    Description: "The database admin account username"
+    Default: "admin_empower"
+    Type: "String"
+    MinLength: "1"
+    MaxLength: "16"
+    AllowedPattern: "[a-zA-Z0-9_]*"
+    ConstraintDescription: "must begin with a letter and contain only alphanumeric characters and underscore, max length 16"
+
+  DBPassword:
+    NoEcho: "true"
+    Description: "The database admin account password"
+    Default: "optional"
+    Type: "String"
+    MinLength: "8"
+    MaxLength: "41"
+    AllowedPattern: "[a-zA-Z0-9]*"
+    ConstraintDescription: "must contain only alphanumeric characters."
+
+  DatabaseEncryption:
+    Type: "String"
+    Default: "false"
+    AllowedValues: [ "true", "false" ]
+
+  RDSBackupRetention:
+    Type: "Number"
+    Default: 5
+    AllowedValues: [ 5, 10, 15 ]
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Project Information"
+        Parameters:
+          - ProjectEnvironment
+
+      - Label:
+          default: "RDS Details"
+        Parameters:
+          - DBInstanceIdentifier
+          - DBInstanceSize
+          - DBName
+          - DBUser
+
+Resources:
+  ##RDS
+  RDSMonitoringRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "empower-energy-${ProjectEnvironment}-RDS-Monitoring-Role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - monitoring.rds.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Description: Allows RDS instances to call AWS services on your behalf
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole
+
+  RDSSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: !Sub "RDS Security Group for empower-energy-${ProjectEnvironment}"
+      GroupName: !Sub "empower-energy-RDS-SG-${ProjectEnvironment}"
+      VpcId: !Sub "${VPC}"
+
+      SecurityGroupIngress:
+        - CidrIp: "10.0.0.0/16"
+          FromPort: 5432
+          IpProtocol: "tcp"
+          ToPort: 5432
+      SecurityGroupEgress:
+        - CidrIp: "10.0.0.0/16"
+          IpProtocol: "-1"
+
+  DBPrivateSubnetGroup:
+    Type: "AWS::RDS::DBSubnetGroup"
+    Properties:
+      DBSubnetGroupDescription: !Sub "Private DBSubnet Group for empower-energy-${ProjectEnvironment}"
+      DBSubnetGroupName: !Sub "empower-energy-DBSubnetGroup-${ProjectEnvironment}-private"
+      SubnetIds: !Ref PrivateSubnets
+
+  RDSInstance:
+    Type: "AWS::RDS::DBInstance"
+    Properties:
+      AllocatedStorage: "20"
+      DBInstanceClass: !Ref DBInstanceSize
+      Engine: "postgres"
+      MasterUsername: !Ref DBUser
+      MasterUserPassword: !Ref DBPassword
+      DBName: !Ref DBName
+      DBInstanceIdentifier: !Ref DBInstanceIdentifier
+      PreferredBackupWindow: "00:00-01:00"
+      BackupRetentionPeriod: !Ref RDSBackupRetention
+      AvailabilityZone: !Sub "${AWS::Region}a"
+      PreferredMaintenanceWindow: "sat:01:00-sat:02:00"
+      MultiAZ: false
+      EngineVersion: "13.3"
+      AutoMinorVersionUpgrade: true
+      LicenseModel: "postgresql-license"
+      PubliclyAccessible: false
+      StorageType: "gp2"
+      Port: "5432"
+      StorageEncrypted: !Ref DatabaseEncryption
+      CopyTagsToSnapshot: true
+      MonitoringInterval: 60
+      EnableIAMDatabaseAuthentication: false
+      EnablePerformanceInsights: false
+      DeletionProtection: true
+      DBSubnetGroupName: !Ref DBPrivateSubnetGroup
+      VPCSecurityGroups:
+        - !Ref RDSSecurityGroup
+      MonitoringRoleArn: !GetAtt RDSMonitoringRole.Arn
+      EnableCloudwatchLogsExports:
+        - "postgresql"
+      CACertificateIdentifier: "rds-ca-2019"

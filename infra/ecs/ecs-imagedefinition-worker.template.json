@@ -1,0 +1,6 @@
+[
+    {
+        "name": "worker",
+        "imageUri": "${REPOSITORY_URI_PHP}:${IMAGE_TAG}"
+    }
+]

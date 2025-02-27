@@ -1,0 +1,10 @@
+[
+    {
+        "name": "php",
+        "imageUri": "${REPOSITORY_URI_PHP}:${IMAGE_TAG}"
+    },
+    {
+        "name": "nginx",
+        "imageUri": "${REPOSITORY_URI_NGINX}:${IMAGE_TAG}"
+    }
+]

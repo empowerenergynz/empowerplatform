@@ -1,0 +1,355 @@
+# TODO: Add slack notifications for builds
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Create CodePipeline for ECS"
+Parameters:
+  Branch:
+    Type: String
+    Default: main
+    Description: Git branch name
+  Environment:
+    Type: String
+    Default: test
+    Description: Environment name
+    AllowedValues:
+      - test
+      - production
+      - stage
+
+Mappings:
+  EnvironmentSettings:
+    test:
+      EnvironmentUpper: "TEST"
+    stage:
+      EnvironmentUpper: "STAGE"
+    production:
+      EnvironmentUpper: "PRODUCTION"
+
+Resources:
+  CodePipelineArtifactStoreBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Sub "codepipeline-empower-energy-${Environment}-bucket"
+  CodePipelineArtifactStoreBucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+      Bucket: !Ref CodePipelineArtifactStoreBucket
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Sid: DenyUnEncryptedObjectUploads
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:PutObject'
+            Resource: !Join
+              - ''
+              - - !GetAtt
+                  - CodePipelineArtifactStoreBucket
+                  - Arn
+                - /*
+            Condition:
+              StringNotEquals:
+                's3:x-amz-server-side-encryption': 'aws:kms'
+          - Sid: DenyInsecureConnections
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource: !Join
+              - ''
+              - - !GetAtt
+                  - CodePipelineArtifactStoreBucket
+                  - Arn
+                - /*
+            Condition:
+              Bool:
+                'aws:SecureTransport': false
+  AppPipelineWebhook:
+    Type: 'AWS::CodePipeline::Webhook'
+    Properties:
+      Authentication: GITHUB_HMAC
+      AuthenticationConfiguration:
+        SecretToken: '{{resolve:secretsmanager:GitHubSecret:SecretString:token}}'
+      Filters:
+        - JsonPath: $.ref
+          MatchEquals: 'refs/heads/{Branch}'
+      TargetPipeline: !Ref AppPipeline
+      TargetAction: SourceAction
+      Name: !Sub "empower-energy-${Environment}-CodePipeline-Webhook"
+      TargetPipelineVersion: !GetAtt
+        - AppPipeline
+        - Version
+      RegisterWithThirdParty: true
+
+  CodeBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "CodeBuildRole-empower-energy-${Environment}"
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "codebuild.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: /service-role/
+      Policies:
+        - PolicyName: !Sub "CodeBuild-empower-energy-${Environment}-Policy"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "ec2:Describe*"
+                  - "elasticloadbalancing:Describe*"
+                  - "autoscaling:Describe*"
+                  - "iam:Get*"
+                  - "iam:List*"
+                  - "logs:Describe*"
+                  - "logs:Get*"
+                  - "tag:Get*"
+                  - "ecr:GetAuthorizationToken"
+                Resource:
+                  - "*"
+              - Effect: Allow
+                Action:
+                  - "ecr:GetLifecyclePolicyPreview"
+                  - "ecr:GetDownloadUrlForLayer"
+                  - "ecr:ListTagsForResource"
+                  - "ecr:UploadLayerPart"
+                  - "ecr:ListImages"
+                  - "ecr:PutImage"
+                  - "ecr:UntagResource"
+                  - "ecr:BatchGetImage"
+                  - "ecr:CompleteLayerUpload"
+                  - "ecr:DescribeImages"
+                  - "ecr:TagResource"
+                  - "ecr:DescribeRepositories"
+                  - "ecr:InitiateLayerUpload"
+                  - "ecr:BatchCheckLayerAvailability"
+                  - "ecr:GetLifecyclePolicy"
+                  - "ecr:GetRepositoryPolicy"
+                Resource:
+                  - !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/empower-energy/empower-energy-backend"
+                  - !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/empower-energy/empower-energy-nginx"
+              - Effect: "Allow"
+                Action:
+                  - "ssm:GetParameters"
+                Resource:
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/empower-energy/${Environment}/*"
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/REPMAN_COMPOSER_AUTH"
+              - Effect: "Allow"
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource:
+                  - Fn::Sub: arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/*
+              - Effect: "Allow"
+                Action:
+                  - "s3:PutObject"
+                  - "s3:GetObject"
+                  - "s3:GetObjectVersion"
+                  - "s3:ListBucket"
+                Resource:
+                  - !Sub "arn:aws:s3:::codepipeline-empower-energy-${Environment}-bucket"
+                  - !Sub "arn:aws:s3:::codepipeline-empower-energy-${Environment}-bucket/*"
+  AppCodeBuild:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      ServiceRole: !GetAtt CodeBuildRole.Arn
+      Name: !Sub "empower-energy-${Environment}"
+      Artifacts:
+        Type: CODEPIPELINE
+      Cache:
+        Location: !Ref CodePipelineArtifactStoreBucket
+        Type: S3
+      Description: !Sub "CodeBuild for empower-energy-${Environment}"
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_MEDIUM
+        Image: aws/codebuild/standard:7.0
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: APP_ENV
+            Value: !Ref Environment
+            Type: PLAINTEXT
+          - Name: AWS_ACCOUNT_ID
+            Value: !Sub "${AWS::AccountId}"
+            Type: PLAINTEXT
+          - Name: REPOSITORY_URI_PHP
+            Value: !Sub "${AWS::AccountId}.dkr.ecr.ap-southeast-2.amazonaws.com/empower-energy/empower-energy-backend"
+            Type: PLAINTEXT
+          - Name: REPOSITORY_URI_NGINX
+            Value: !Sub "${AWS::AccountId}.dkr.ecr.ap-southeast-2.amazonaws.com/empower-energy/empower-energy-nginx"
+            Type: PLAINTEXT
+          - Name: COMPOSER_AUTH
+            Value: ""
+            Type: PLAINTEXT
+      Source:
+        Type: CODEPIPELINE
+
+  AppPipeline:
+    Type: 'AWS::CodePipeline::Pipeline'
+    Properties:
+      Name: !Sub "empower-energy-${Environment}-Pipeline"
+      RoleArn: !GetAtt CodePipelineServiceRole.Arn
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: SourceAction
+              ActionTypeId:
+                Category: Source
+                Owner: ThirdParty
+                Version: 1
+                Provider: GitHub
+              OutputArtifacts:
+                - Name: SourceArtifact
+              Configuration:
+                Owner: "empowerenergynz"
+                Repo: "empower-energy"
+                Branch: !Sub "${Branch}"
+                OAuthToken: "{{resolve:secretsmanager:GitHubSecret:SecretString:token}}"
+                PollForSourceChanges: false
+              RunOrder: 1
+        - Name: Build
+          Actions:
+            - Name: CodeBuild
+              InputArtifacts:
+                - Name: SourceArtifact
+              OutputArtifacts:
+                - Name: BuildArtifact
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Version: 1
+                Provider: CodeBuild
+              Configuration:
+                ProjectName: !Sub "empower-energy-${Environment}"
+              RunOrder: 1
+        - Name: Deploy
+          Actions:
+            - Name: DeployApp
+              InputArtifacts:
+                - Name: BuildArtifact
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Version: 1
+                Provider: ECS
+              Configuration:
+                ClusterName: !Sub "empower-energy-${Environment}"
+                ServiceName: "App"
+                FileName: ecs-imagedefinition-app.json
+                DeploymentTimeout: '15'
+              RunOrder: 1
+      DisableInboundStageTransitions:
+        - Reason: "Disabled when created. Please enable."
+          StageName: "Deploy"
+      ArtifactStore:
+        Type: S3
+        Location: !Ref CodePipelineArtifactStoreBucket
+
+  CodePipelineServiceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub
+                  - "CodePipelineRole-empower-energy-${EnvironmentUpper}"
+                  - { EnvironmentUpper: !FindInMap [EnvironmentSettings, !Ref Environment, "EnvironmentUpper"] }
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codepipeline.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: !Sub
+                        - "CodePipeline-empower-energy-${EnvironmentUpper}-Policy"
+                        - { EnvironmentUpper: !FindInMap [EnvironmentSettings, !Ref Environment, "EnvironmentUpper"] }
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'codedeploy:CreateDeployment'
+                  - 'codedeploy:GetApplicationRevision'
+                  - 'codedeploy:GetDeployment'
+                  - 'codedeploy:GetDeploymentConfig'
+                  - 'codedeploy:RegisterApplicationRevision'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'codebuild:BatchGetBuilds'
+                  - 'codebuild:StartBuild'
+                Resource: '*'
+              - Effect: "Allow"
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource:
+                  - Fn::Sub: arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/codebuild/*
+              - Effect: Allow
+                Action:
+                  - 'iam:PassRole'
+                Resource: '*'
+              - Effect: "Allow"
+                Action:
+                  - "s3:PutObject"
+                  - "s3:GetObject"
+                  - "s3:GetObjectVersion"
+                  - "s3:ListBucket"
+                Resource:
+                  - !Sub "arn:aws:s3:::codepipeline-empower-energy-${Environment}-bucket"
+                  - !Sub "arn:aws:s3:::codepipeline-empower-energy-${Environment}-bucket/*"
+              - Effect: Allow
+                Action:
+                  - "ec2:Describe*"
+                  - "cloudformation:ValidateTemplate"
+                  - "elasticloadbalancing:Describe*"
+                  - "autoscaling:Describe*"
+                  - "iam:Get*"
+                  - "iam:List*"
+                  - "logs:Describe*"
+                  - "logs:Get*"
+                  - "tag:Get*"
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - "ecr:GetLifecyclePolicyPreview"
+                  - "ecr:GetDownloadUrlForLayer"
+                  - "ecr:ListTagsForResource"
+                  - "ecr:UploadLayerPart"
+                  - "ecr:ListImages"
+                  - "ecr:PutImage"
+                  - "ecr:UntagResource"
+                  - "ecr:BatchGetImage"
+                  - "ecr:CompleteLayerUpload"
+                  - "ecr:DescribeImages"
+                  - "ecr:TagResource"
+                  - "ecr:DescribeRepositories"
+                  - "ecr:InitiateLayerUpload"
+                  - "ecr:BatchCheckLayerAvailability"
+                  - "ecr:GetLifecyclePolicy"
+                  - "ecr:GetRepositoryPolicy"
+                Resource:
+                  - !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/empower-energy/empower-energy-backend"
+                  - !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/empower-energy/empower-energy-nginx"
+              - Effect: Allow
+                Action:
+                  - "ecs:UpdateService"
+                  - "ecs:CreateService"
+                  - "ecs:DescribeServices"
+                  - "ecs:UpdateServicePrimaryTaskSet"
+                  - "ecs:DeregisterTaskDefinition"
+                  - "ecs:ListServices"
+                  - "ecs:ListTaskDefinitionFamilies"
+                  - "ecs:RegisterTaskDefinition"
+                  - "ecs:ListTaskDefinitions"
+                  - "ecs:DescribeTaskDefinition"
+                  - "ecs:CreateTaskSet"
+                Resource: '*'
+

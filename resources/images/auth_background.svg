@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1440px" height="1024px" viewBox="0 0 1440 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>Autentication / Set New Password</title>
+    <g id="Autentication-/-Set-New-Password" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <rect fill="#134C3F" x="0" y="0" width="1440" height="1024"></rect>
+        <path d="M674.772339,1062.72418 C674.772339,353.495312 1030.20947,-1.11911887 1741.08372,-1.11911887 C1741.08372,755.299906 1385.64659,1109.91434 674.772339,1062.72418 Z" id="Path-Copy" fill="#28896B" transform="translate(1207.928029, 532.880881) rotate(60.000000) translate(-1207.928029, -532.880881) "></path>
+        <path d="M862.592329,1368.45796 C862.592329,797.356065 1148.80575,511.805118 1721.23258,511.805118 C1721.23258,1120.90658 1435.01916,1406.45753 862.592329,1368.45796 Z" id="Path" fill="#FCAF20"></path>
+        <path d="M1038.59233,689.457958 C1038.59233,118.356065 1324.80575,-167.194882 1897.23258,-167.194882 C1897.23258,441.90658 1611.01916,727.457527 1038.59233,689.457958 Z" id="Path" fill="#F2911B" transform="translate(1467.912453, 262.805118) rotate(60.000000) translate(-1467.912453, -262.805118) "></path>
+    </g>
+</svg>

@@ -1,0 +1,19 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Create ECR for empower-energy"
+
+Resources:
+  ECRBackend:
+    Type: "AWS::ECR::Repository"
+    Properties:
+      RepositoryName: "empower-energy/empower-energy-backend"
+      LifecyclePolicy:
+        LifecyclePolicyText: "{\"rules\":[{\"rulePriority\":1,\"description\":\"Delete old test_ images\",\"selection\":{\"tagStatus\":\"tagged\",\"tagPrefixList\":[\"test_\"],\"countType\":\"imageCountMoreThan\",\"countNumber\":10},\"action\":{\"type\":\"expire\"}},{\"rulePriority\":2,\"description\":\"Delete old stage_ images\",\"selection\":{\"tagStatus\":\"tagged\",\"tagPrefixList\":[\"stage_\"],\"countType\":\"imageCountMoreThan\",\"countNumber\":10},\"action\":{\"type\":\"expire\"}},{\"rulePriority\":3,\"description\":\"Delete old production_ images\",\"selection\":{\"tagStatus\":\"tagged\",\"tagPrefixList\":[\"production_\"],\"countType\":\"imageCountMoreThan\",\"countNumber\":10},\"action\":{\"type\":\"expire\"}},{\"rulePriority\":4,\"description\":\"Delete untagged images\",\"selection\":{\"tagStatus\":\"untagged\",\"countType\":\"sinceImagePushed\",\"countUnit\":\"days\",\"countNumber\":1},\"action\":{\"type\":\"expire\"}}]}"
+        RegistryId: !Ref AWS::AccountId
+
+  ECRNginx:
+    Type: "AWS::ECR::Repository"
+    Properties:
+      RepositoryName: "empower-energy/empower-energy-nginx"
+      LifecyclePolicy:
+        LifecyclePolicyText: "{\"rules\":[{\"rulePriority\":1,\"description\":\"Delete old test_ images\",\"selection\":{\"tagStatus\":\"tagged\",\"tagPrefixList\":[\"test_\"],\"countType\":\"imageCountMoreThan\",\"countNumber\":10},\"action\":{\"type\":\"expire\"}},{\"rulePriority\":2,\"description\":\"Delete old stage_ images\",\"selection\":{\"tagStatus\":\"tagged\",\"tagPrefixList\":[\"stage_\"],\"countType\":\"imageCountMoreThan\",\"countNumber\":10},\"action\":{\"type\":\"expire\"}},{\"rulePriority\":3,\"description\":\"Delete old production_ images\",\"selection\":{\"tagStatus\":\"tagged\",\"tagPrefixList\":[\"production_\"],\"countType\":\"imageCountMoreThan\",\"countNumber\":10},\"action\":{\"type\":\"expire\"}},{\"rulePriority\":4,\"description\":\"Delete untagged images\",\"selection\":{\"tagStatus\":\"untagged\",\"countType\":\"sinceImagePushed\",\"countUnit\":\"days\",\"countNumber\":1},\"action\":{\"type\":\"expire\"}}]}"
+        RegistryId: !Ref AWS::AccountId

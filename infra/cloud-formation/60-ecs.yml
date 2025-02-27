@@ -1,0 +1,455 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Create ECS for empower-energy"
+
+Parameters:
+
+  ProjectEnvironment:
+    Type: "String"
+    Default: "test"
+    Description: "Environment for project"
+    AllowedValues: [ "production", "stage", "test" ]
+
+  VPC:
+    Type: "AWS::EC2::VPC::Id"
+    Description: "VPC for the project"
+
+  PrivateSubnetA:
+    Type: "AWS::EC2::Subnet::Id"
+    Description: "Private Subnet A"
+
+  PrivateSubnetB:
+    Type: "AWS::EC2::Subnet::Id"
+    Description: "Private Subnet B"
+
+  PrivateSubnetC:
+    Type: "AWS::EC2::Subnet::Id"
+    Description: "Private Subnet C"
+
+  SubnetA:
+    Type: "AWS::EC2::Subnet::Id"
+    Description: "Subnet A"
+
+  SubnetB:
+    Type: "AWS::EC2::Subnet::Id"
+    Description: "Subnet B"
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Project Information"
+        Parameters:
+          - ProjectEnvironment
+      - Label:
+          default: "Network Information"
+        Parameters:
+          - VPC
+          - PrivateSubnetA
+          - PrivateSubnetB
+          - PrivateSubnetC
+          - SubnetA
+          - SubnetB
+
+Mappings:
+  EnvironmentSettings:
+    test:
+      ListernerRulePriority: 1
+      ExecuteCommand: true
+      LogRetentionDays: 7
+      ContainerInsights: "disabled"
+    stage:
+      ListernerRulePriority: 2
+      ExecuteCommand: true
+      LogRetentionDays: 90
+      ContainerInsights: "enabled"
+    production:
+      ListernerRulePriority: 1
+      ExecuteCommand: false
+      LogRetentionDays: 90
+      ContainerInsights: "enabled"
+
+Resources:
+  #ECS
+  ECSCluster:
+    Type: "AWS::ECS::Cluster"
+    Properties:
+      ClusterName: !Sub "empower-energy-${ProjectEnvironment}"
+      ClusterSettings:
+        - Name: "containerInsights"
+          Value: !FindInMap [ EnvironmentSettings, !Ref ProjectEnvironment, "ContainerInsights" ]
+
+  ECSTaskRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Path: "/"
+      RoleName: !Sub "empower-energy-${ProjectEnvironment}-ecs-role"
+      AssumeRolePolicyDocument: "{\"Version\":\"2008-10-17\",\"Statement\":[{\"Sid\":\"\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"ecs-tasks.amazonaws.com\"},\"Action\":\"sts:AssumeRole\"}]}"
+      MaxSessionDuration: 3600
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+        - arn:aws:iam::aws:policy/AmazonElasticFileSystemClientReadWriteAccess
+        - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+        - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+      Policies:
+        - PolicyName: !Sub "empower-energy-${ProjectEnvironment}-Parameter-Store"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "ssm:GetParameters"
+                  - "ssm:GetParameter"
+                Resource:
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*"
+              - Effect: Allow
+                Action:
+                  - "ssm:DescribeParameters"
+                Resource:
+                  - "*"
+        - PolicyName: !Sub "empower-energy-${ProjectEnvironment}-SSMMessages"
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "ssmmessages:CreateControlChannel"
+                  - "ssmmessages:CreateDataChannel"
+                  - "ssmmessages:OpenControlChannel"
+                  - "ssmmessages:OpenDataChannel"
+                Resource:
+                  - "*"
+
+  ECSSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: !Sub "ECS SG for empower-energy-${ProjectEnvironment}"
+      GroupName: !Sub "empower-energy-${ProjectEnvironment}-ECS-SG"
+      VpcId: !Ref VPC
+
+      SecurityGroupIngress:
+        - CidrIp: "10.0.0.0/16"
+          FromPort: 80
+          IpProtocol: "tcp"
+          ToPort: 80
+
+        - CidrIp: "10.0.0.0/16"
+          FromPort: 443
+          IpProtocol: "tcp"
+          ToPort: 443
+
+      SecurityGroupEgress:
+        - CidrIp: "0.0.0.0/0"
+          IpProtocol: "-1"
+
+  EFSSecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: !Sub "EFS SG for empower-energy-${ProjectEnvironment}"
+      GroupName: !Sub "empower-energy-${ProjectEnvironment}-EFS-SG"
+      VpcId: !Ref VPC
+
+      SecurityGroupIngress:
+        - SourceSecurityGroupId: !GetAtt ECSSecurityGroup.GroupId
+          FromPort: 2049
+          IpProtocol: "tcp"
+          ToPort: 2049
+
+      SecurityGroupEgress:
+        - CidrIp: "10.0.0.0/16"
+          IpProtocol: "-1"
+
+  FileSystemResource:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      BackupPolicy:
+        Status: ENABLED
+      Encrypted: true
+      LifecyclePolicies:
+        - TransitionToIA: AFTER_30_DAYS
+      PerformanceMode: "generalPurpose"
+      ThroughputMode: "bursting"
+
+  MountTargetResource1:
+    Type: AWS::EFS::MountTarget
+    DependsOn:
+      - FileSystemResource
+      - EFSSecurityGroup
+    Properties:
+      FileSystemId: !Ref FileSystemResource
+      SubnetId: !Ref PrivateSubnetA
+      SecurityGroups:
+        - !GetAtt EFSSecurityGroup.GroupId
+
+  MountTargetResource2:
+    Type: AWS::EFS::MountTarget
+    DependsOn:
+      - FileSystemResource
+      - EFSSecurityGroup
+    Properties:
+      FileSystemId: !Ref FileSystemResource
+      SubnetId: !Ref PrivateSubnetB
+      SecurityGroups:
+        - !GetAtt EFSSecurityGroup.GroupId
+
+  MountTargetResource3:
+    Type: AWS::EFS::MountTarget
+    DependsOn:
+      - FileSystemResource
+      - EFSSecurityGroup
+    Properties:
+      FileSystemId: !Ref FileSystemResource
+      SubnetId: !Ref PrivateSubnetC
+      SecurityGroups:
+        - !GetAtt EFSSecurityGroup.GroupId
+
+  ElasticLoadBalancingV2TargetGroup:
+    Type: "AWS::ElasticLoadBalancingV2::TargetGroup"
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthCheckPath: "/healthcheck"
+      Port: 443
+      Protocol: "HTTPS"
+      HealthCheckPort: "traffic-port"
+      HealthCheckProtocol: "HTTPS"
+      HealthCheckTimeoutSeconds: 5
+      UnhealthyThresholdCount: 2
+      TargetType: "ip"
+      Matcher:
+        HttpCode: "200"
+      HealthyThresholdCount: 5
+      VpcId: !Ref VPC
+      Name: !Sub "empower-energy-${ProjectEnvironment}-TG"
+      HealthCheckEnabled: true
+      TargetGroupAttributes:
+        - Key: "stickiness.enabled"
+          Value: "true"
+        - Key: "deregistration_delay.timeout_seconds"
+          Value: "30"
+        - Key: "stickiness.type"
+          Value: "lb_cookie"
+        - Key: "stickiness.lb_cookie.duration_seconds"
+          Value: "3600"
+        - Key: "slow_start.duration_seconds"
+          Value: "0"
+        - Key: "load_balancing.algorithm.type"
+          Value: "round_robin"
+
+  ## ALB - Rules
+  ElasticLoadBalancingV2ListenerRule:
+    Type: "AWS::ElasticLoadBalancingV2::ListenerRule"
+    Properties:
+      Priority: !FindInMap [ EnvironmentSettings, !Ref ProjectEnvironment, "ListernerRulePriority" ]
+      ListenerArn:
+        Fn::ImportValue:
+          !Sub "empower-energy-HTTPS-Listener"
+      Conditions:
+        - Field: "host-header"
+          Values:
+            - !Sub "${ProjectEnvironment}.empower-energy.empower.local"
+      Actions:
+        - Type: "forward"
+          TargetGroupArn: !Ref ElasticLoadBalancingV2TargetGroup
+          Order: 1
+          ForwardConfig:
+            TargetGroups:
+              - TargetGroupArn: !Ref ElasticLoadBalancingV2TargetGroup
+                Weight: 1
+            TargetGroupStickinessConfig:
+              Enabled: false
+
+  #CloudWatch Log Group
+  ECSLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName: !Sub "/ecs/empower-energy-${ProjectEnvironment}"
+      RetentionInDays: !FindInMap [ EnvironmentSettings, !Ref ProjectEnvironment, "LogRetentionDays" ]
+
+  #ECS
+  ECSAppStackTaskDefinition:
+    Type: "AWS::ECS::TaskDefinition"
+    DependsOn:
+      - MountTargetResource1
+      - MountTargetResource2
+      - MountTargetResource3
+    Properties:
+      ContainerDefinitions:
+        - Name: "php"
+          Command:
+            - "bash"
+            - "-c"
+            - "php artisan down && php artisan config:cache && php artisan route:cache && php artisan view:cache && php artisan init:db && php artisan migrate --force && php artisan up && php-fpm"
+          MountPoints:
+            - ContainerPath: /app/storage
+              SourceVolume: storage
+          Secrets:
+            - Name: "ENV_PARAMETERS"
+              ValueFrom: !Sub "/empower-energy/${ProjectEnvironment}/.env"
+          Essential: "true"
+          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/empower-energy/empower-energy-backend:${ProjectEnvironment}"
+          LogConfiguration:
+            LogDriver: "awslogs"
+            Options:
+              awslogs-group: !Sub "/ecs/empower-energy-${ProjectEnvironment}"
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: "php"
+          LinuxParameters:
+            InitProcessEnabled: true
+        - Name: "nginx"
+          Environment:
+            - Name: "BACKEND_ADDRESS"
+              Value: "localhost"
+          Essential: "true"
+          PortMappings:
+            - ContainerPort: 80
+              Protocol: tcp
+            - ContainerPort: 443
+              Protocol: tcp
+          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/empower-energy/empower-energy-nginx:${ProjectEnvironment}"
+          DependsOn:
+            - Condition: "START"
+              ContainerName: "php"
+          LogConfiguration:
+            LogDriver: "awslogs"
+            Options:
+              awslogs-group: !Sub "/ecs/empower-energy-${ProjectEnvironment}"
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: "nginx"
+          LinuxParameters:
+            InitProcessEnabled: true
+      Family: !Sub "empower-energy-${ProjectEnvironment}-app"
+      ExecutionRoleArn: !GetAtt ECSTaskRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      NetworkMode: "awsvpc"
+      Volumes:
+        - Name: "storage"
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref FileSystemResource
+            TransitEncryption: "ENABLED"
+            AuthorizationConfig:
+              IAM: "ENABLED"
+      RequiresCompatibilities:
+        - "FARGATE"
+      Cpu: "256"
+      Memory: "512"
+
+
+  ECSWorkerStackTaskDefinition:
+    Type: "AWS::ECS::TaskDefinition"
+    DependsOn:
+      - MountTargetResource1
+      - MountTargetResource2
+      - MountTargetResource3
+    Properties:
+      ContainerDefinitions:
+        - Name: "worker"
+          Command:
+            - "bash"
+            - "-c"
+            - "php artisan config:cache && php artisan queue:listen"
+          MountPoints:
+            - ContainerPath: /app/storage
+              SourceVolume: storage
+          Secrets:
+            - Name: "ENV_PARAMETERS"
+              ValueFrom: !Sub "/empower-energy/${ProjectEnvironment}/.env"
+          Essential: "true"
+          StopTimeout: 120
+          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/empower-energy/empower-energy-backend:${ProjectEnvironment}"
+          LogConfiguration:
+            LogDriver: "awslogs"
+            Options:
+              awslogs-group: !Sub "/ecs/empower-energy-${ProjectEnvironment}"
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: "worker"
+          LinuxParameters:
+            InitProcessEnabled: true
+      Family: !Sub "empower-energy-${ProjectEnvironment}-worker"
+      ExecutionRoleArn: !GetAtt ECSTaskRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      NetworkMode: "awsvpc"
+      Volumes:
+        - Name: "storage"
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref FileSystemResource
+            TransitEncryption: "ENABLED"
+            AuthorizationConfig:
+              IAM: "ENABLED"
+      RequiresCompatibilities:
+        - "FARGATE"
+      Cpu: "256"
+      Memory: "512"
+
+  ECSArtisanTaskDefinition:
+    Type: "AWS::ECS::TaskDefinition"
+    DependsOn:
+      - MountTargetResource1
+      - MountTargetResource2
+      - MountTargetResource3
+    Properties:
+      ContainerDefinitions:
+        - Name: "php"
+          Command:
+            - "bash"
+            - "-c"
+            - "php artisan list"
+          MountPoints:
+            - ContainerPath: /app/storage
+              SourceVolume: storage
+          Secrets:
+            - Name: "ENV_PARAMETERS"
+              ValueFrom: !Sub "/empower-energy/${ProjectEnvironment}/.env"
+          Essential: "true"
+          Image: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/empower-energy/empower-energy-backend:${ProjectEnvironment}"
+          LogConfiguration:
+            LogDriver: "awslogs"
+            Options:
+              awslogs-group: !Sub "/ecs/empower-energy-${ProjectEnvironment}"
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: "artisan"
+      Family: !Sub "empower-energy-${ProjectEnvironment}-artisan"
+      ExecutionRoleArn: !GetAtt ECSTaskRole.Arn
+      TaskRoleArn: !GetAtt ECSTaskRole.Arn
+      NetworkMode: "awsvpc"
+      Volumes:
+        - Name: "storage"
+          EFSVolumeConfiguration:
+            FilesystemId: !Ref FileSystemResource
+            TransitEncryption: "ENABLED"
+            AuthorizationConfig:
+              IAM: "ENABLED"
+      RequiresCompatibilities:
+        - "FARGATE"
+      Cpu: "512"
+      Memory: "1024"
+
+  ECSAppService:
+    Type: "AWS::ECS::Service"
+    DependsOn:
+      - ECSAppStackTaskDefinition
+      - ECSSecurityGroup
+      - ElasticLoadBalancingV2TargetGroup
+    Properties:
+      ServiceName: "App"
+      Cluster: !GetAtt ECSCluster.Arn
+      LoadBalancers:
+        - TargetGroupArn: !Ref ElasticLoadBalancingV2TargetGroup
+          ContainerName: "nginx"
+          ContainerPort: 443
+      DesiredCount: 1
+      LaunchType: "FARGATE"
+      PlatformVersion: "1.4.0"
+      TaskDefinition: !Ref ECSAppStackTaskDefinition
+      EnableExecuteCommand: !FindInMap [ EnvironmentSettings, !Ref ProjectEnvironment, "ExecuteCommand" ]
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: "ENABLED"
+          SecurityGroups:
+            - !GetAtt ECSSecurityGroup.GroupId
+          Subnets:
+            - !Ref PrivateSubnetA
+            - !Ref SubnetA
+            - !Ref SubnetB
+      SchedulingStrategy: "REPLICA"

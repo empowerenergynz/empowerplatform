@@ -1,0 +1,36 @@
+{
+    "compilerOptions": {
+        "strict": true,
+        "sourceMap": true,
+        "noImplicitAny": true,
+        "module": "esnext",
+        "lib": [
+            "dom",
+            "dom.iterable",
+            "esnext"
+        ],
+        "target": "es6",
+        "jsx": "react",
+        "typeRoots": [
+            "./node_modules/@types"
+        ],
+        "allowSyntheticDefaultImports": true,
+        "esModuleInterop": true,
+        "moduleResolution": "node",
+        "resolveJsonModule": true,
+        "isolatedModules": false,
+        "baseUrl": ".",
+        "paths": {
+            "src/*": [
+                "./resources/ts/*"
+            ],
+        },
+        "types": ["jest", "cypress", "@testing-library/cypress", "@testing-library/jest-dom", "@types/node", "cypress-file-upload"]
+    },
+    "include": [
+        "./cypress/integration",
+        "./cypress/support",
+        "./resources/ts",
+        "./jest.setup.ts"
+    ]
+}

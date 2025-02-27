@@ -1,0 +1,60 @@
+version: 0.2
+
+env:
+  variables:
+    COMPOSER_CACHE_DIR: .cache/composer
+    MIX_GOOGLEPLACES_API_KEY: ${MIX_GOOGLEPLACES_API_KEY}
+    COMPOSER_AUTH: ${COMPOSER_AUTH}
+    MIX_SENTRY_LARAVEL_DSN: ${MIX_SENTRY_LARAVEL_DSN}
+    MIX_SENTRY_TRACES_SAMPLE_RATE: 0.05
+phases:
+  install:
+    runtime-versions:
+      nodejs: 20
+      php: 8.2
+  pre_build:
+    commands:
+      - echo Logging in to AWS ECR...
+      - aws --version
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+      - COMMIT_HASH=${APP_ENV}_$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - IMAGE_TAG=${COMMIT_HASH:=latest}
+      - envsubst < infra/ecs/ecs-taskdef-app.template.json > ecs-taskdef-app.json
+      - envsubst < infra/ecs/ecs-imagedefinition-app.template.json > ecs-imagedefinition-app.json
+      - envsubst < infra/ecs/ecs-taskdef-worker.template.json > ecs-taskdef-worker.json
+      - envsubst < infra/ecs/ecs-imagedefinition-worker.template.json > ecs-imagedefinition-worker.json
+  build:
+    commands:
+      - echo Build started on `date`
+      - echo Installing composer dependencies...
+      - composer install
+      - echo Installing npm packages
+      - npm ci --legacy-peer-deps
+      - echo Build assets
+      - MIX_APP_ENV=${APP_ENV}
+      - MIX_COMMIT_HASH=${COMMIT_HASH}
+      - npm run production
+      - echo Build PHP container on `date`
+      - docker build -f ./docker/production/php/Dockerfile -t ${REPOSITORY_URI_PHP}:${APP_ENV} .
+      - docker tag ${REPOSITORY_URI_PHP}:${APP_ENV} ${REPOSITORY_URI_PHP}:${IMAGE_TAG}
+      - echo Build Nginx container on `date`
+      - docker build -f ./docker/production/nginx/Dockerfile -t ${REPOSITORY_URI_NGINX}:${APP_ENV} .
+      - docker tag ${REPOSITORY_URI_NGINX}:${APP_ENV} ${REPOSITORY_URI_NGINX}:${IMAGE_TAG}
+  post_build:
+    commands:
+      - echo Build completed on `date`
+      - echo Pushing the Docker images...
+      - docker push ${REPOSITORY_URI_PHP}:${APP_ENV}
+      - docker push ${REPOSITORY_URI_PHP}:${IMAGE_TAG}
+      - docker push ${REPOSITORY_URI_NGINX}:${APP_ENV}
+      - docker push ${REPOSITORY_URI_NGINX}:${IMAGE_TAG}
+artifacts:
+  files:
+    - ecs-taskdef-app.json
+    - ecs-imagedefinition-app.json
+    - ecs-taskdef-worker.json
+    - ecs-imagedefinition-worker.json
+cache:
+  paths:
+    - .cache/composer/**/*
+    - node_modules/**/*

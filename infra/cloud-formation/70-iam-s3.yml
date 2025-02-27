@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Create S3 and IAM Policy"
+Parameters:
+  ProjectEnvironment:
+    Type: "String"
+    Default: "test"
+    Description: "Environment for project"
+    AllowedValues: [ "production", "stage", "test" ]
+
+Resources:
+
+  ## S3
+  S3Bucket:
+    Type: "AWS::S3::Bucket"
+    Properties:
+      BucketName: !Sub "empower-energy-${ProjectEnvironment}-${AWS::AccountId}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: "AES256"
+      LifecycleConfiguration:
+        Rules:
+          - Id: "ChangeOfStorageClass"
+            Status: "Enabled"
+            NoncurrentVersionTransitions:
+              - TransitionInDays: 5
+                StorageClass: "INTELLIGENT_TIERING"
+            Transitions:
+              - TransitionInDays: 30
+                StorageClass: "INTELLIGENT_TIERING"
+      VersioningConfiguration:
+        Status: "Enabled"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  S3Policy:
+    Type: "AWS::IAM::ManagedPolicy"
+    Properties:
+      ManagedPolicyName: !Sub "empower-energy-${ProjectEnvironment}-S3"
+      Path: "/"
+      Roles:
+        - !Sub "empower-energy-${ProjectEnvironment}-ecs-role"
+      PolicyDocument: !Sub |
+            {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Sid": "VisualEditor0",
+                        "Effect": "Allow",
+                        "Action": [
+                            "s3:ListBucket",
+                            "s3:GetBucketLocation"
+                        ],
+                        "Resource": "arn:aws:s3:::empower-energy-${ProjectEnvironment}-${AWS::AccountId}"
+                    },
+                    {
+                        "Sid": "VisualEditor1",
+                        "Effect": "Allow",
+                        "Action": [
+                            "s3:PutObject",
+                            "s3:PutObjectAcl",
+                            "s3:GetObject",
+                            "s3:GetObjectTagging",
+                            "s3:PutObjectTagging",
+                            "s3:DeleteObject"
+                        ],
+                        "Resource": "arn:aws:s3:::empower-energy-${ProjectEnvironment}-${AWS::AccountId}/*"
+                    }
+                ]
+            }

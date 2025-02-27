@@ -1,0 +1,6 @@
+*
+!.gitignore
+!scout-local-general.php.example
+!scout-production-general.php
+!scout-test-general.php
+!scout-ci-general.php

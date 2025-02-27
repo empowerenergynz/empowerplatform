@@ -1,0 +1,25 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Create SES sending policy and attach it to one or more roles"
+
+Parameters:
+  SESIdentity:
+    Type: String
+    Description: "The SES identity to use"
+  AttachToRoles:
+    Type: CommaDelimitedList
+    Description: "The roles to attach this policy to"
+
+Resources:
+  SESSendOnlyManagedPolicy:
+    Type: 'AWS::IAM::ManagedPolicy'
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowSendingSESEmails
+            Effect: Allow
+            Action:
+              - 'ses:SendEmail'
+              - 'ses:SendRawEmail'
+            Resource: !Sub "arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${SESIdentity}"
+      Roles: !Ref AttachToRoles
