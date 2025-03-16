@@ -28,8 +28,6 @@
         "jest:path": "TZ=UTC jest --testPathPattern",
         "jest:watch": "TZ=UTC jest --watch",
         "jest:coverage": "TZ=UTC jest --coverage",
-        "7777:test": "AWS_PROFILE=EE-test-7777 7777 --region=ap-southeast-2",
-        "7777:prod": "AWS_PROFILE=EE-prod-7777 7777 --region=ap-southeast-2",
         "algolia:config:sync": "docker compose exec -e PHP_XDEBUG_MODE=off -T php php artisan scout:sync",
         "data:fresh-seed": "docker compose exec -e PHP_XDEBUG_MODE=off -T php php artisan migrate:fresh --seed",
         "data:search-sync": "docker compose exec -e PHP_XDEBUG_MODE=off -T php php artisan scout:reimport"

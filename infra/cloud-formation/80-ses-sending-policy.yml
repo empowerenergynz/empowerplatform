@@ -4,10 +4,10 @@ Description: "Create SES sending policy and attach it to one or more roles"
 Parameters:
   SESIdentity:
     Type: String
-    Description: "The SES identity to use"
+    Description: "The SES identity (domain name or email address) to use"
   AttachToRoles:
     Type: CommaDelimitedList
-    Description: "The roles to attach this policy to"
+    Default: "empower-energy-test-ecs-role"
 
 Resources:
   SESSendOnlyManagedPolicy:

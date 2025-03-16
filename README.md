@@ -55,4 +55,12 @@ DB_DATABASE=/app/storage/app/database.sqlite
 ## AWS Hosting
 
 * Create a GitHub webhook for AWS CodePipeline builds
-* Install the CloudFormation scripts in order in `infra/cloud-formation`
+* Create a new Personal App Token through https://github.com/settings/tokens with permissions for `admin_repo` (to create webhooks) and `public_repo` (to grab the source)
+* Create a new SecretsManager secret through https://ap-southeast-2.console.aws.amazon.com/secretsmanager/newsecret?region=ap-southeast-2 ("Other type of secret") called `GitHubSecret` and add a new value with "Secret key" of `token` and "Secret value" of the PAT from above `ghp_...`
+* Create a new Parameter Store param called `/empower-energy/{env}/.env` (replacing `{env}` with the test/prod environment) name, and add the contents of a freshly generated `.env` file as the value https://ap-southeast-2.console.aws.amazon.com/systems-manager/parameters/aws/create?region=ap-southeast-2
+* Manually create an SES email identity https://ap-southeast-2.console.aws.amazon.com/ses/home
+* Install the CloudFormation scripts in numerical order in `infra/cloud-formation`
+    * Make sure the 'Build' stage in [CodePipeline](https://ap-southeast-2.console.aws.amazon.com/codesuite/codepipeline/pipelines) finishes before deploying ECS
+* After the ECS script is installed, open CodePipeline and enable the Deploy stage (click the lock icon between the Build and Deploy stages)
+    * It is normal for the ECS CloudFormation stack to show in a pending state
+* Create a DNS record CNAME to point to the ECS [load balancer](https://ap-southeast-2.console.aws.amazon.com/ec2/home?region=ap-southeast-2#LoadBalancers:)

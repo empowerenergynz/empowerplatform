@@ -2,6 +2,14 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: "Create CodePipeline for ECS"
 Parameters:
+  GitHubRepoOwner:
+    Type: String
+    Default: empowerenergynz
+    Description: GitHub repo owner name
+  GitHubRepoName:
+    Type: String
+    Default: empowerplatform
+    Description: GitHub repo name
   Branch:
     Type: String
     Default: main
@@ -28,7 +36,7 @@ Resources:
   CodePipelineArtifactStoreBucket:
     Type: 'AWS::S3::Bucket'
     Properties:
-      BucketName: !Sub "codepipeline-empower-energy-${Environment}-bucket"
+      BucketName: !Sub "codepipeline-empower-energy-${Environment}-bucket-${AWS::AccountId}"
   CodePipelineArtifactStoreBucketPolicy:
     Type: 'AWS::S3::BucketPolicy'
     Properties:
@@ -152,8 +160,8 @@ Resources:
                   - "s3:GetObjectVersion"
                   - "s3:ListBucket"
                 Resource:
-                  - !Sub "arn:aws:s3:::codepipeline-empower-energy-${Environment}-bucket"
-                  - !Sub "arn:aws:s3:::codepipeline-empower-energy-${Environment}-bucket/*"
+                  - !Sub "arn:aws:s3:::codepipeline-empower-energy-${Environment}-bucket-${AWS::AccountId}"
+                  - !Sub "arn:aws:s3:::codepipeline-empower-energy-${Environment}-bucket-${AWS::AccountId}/*"
   AppCodeBuild:
     Type: AWS::CodeBuild::Project
     Properties:
@@ -178,10 +186,10 @@ Resources:
             Value: !Sub "${AWS::AccountId}"
             Type: PLAINTEXT
           - Name: REPOSITORY_URI_PHP
-            Value: !Sub "${AWS::AccountId}.dkr.ecr.ap-southeast-2.amazonaws.com/empower-energy/empower-energy-backend"
+            Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/empower-energy/empower-energy-backend"
             Type: PLAINTEXT
           - Name: REPOSITORY_URI_NGINX
-            Value: !Sub "${AWS::AccountId}.dkr.ecr.ap-southeast-2.amazonaws.com/empower-energy/empower-energy-nginx"
+            Value: !Sub "${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/empower-energy/empower-energy-nginx"
             Type: PLAINTEXT
           - Name: COMPOSER_AUTH
             Value: ""
@@ -206,9 +214,9 @@ Resources:
               OutputArtifacts:
                 - Name: SourceArtifact
               Configuration:
-                Owner: "empowerenergynz"
-                Repo: "empower-energy"
-                Branch: !Sub "${Branch}"
+                Owner: !Ref GitHubRepoOwner
+                Repo: !Ref GitHubRepoName
+                Branch: !Ref Branch
                 OAuthToken: "{{resolve:secretsmanager:GitHubSecret:SecretString:token}}"
                 PollForSourceChanges: false
               RunOrder: 1
@@ -303,8 +311,8 @@ Resources:
                   - "s3:GetObjectVersion"
                   - "s3:ListBucket"
                 Resource:
-                  - !Sub "arn:aws:s3:::codepipeline-empower-energy-${Environment}-bucket"
-                  - !Sub "arn:aws:s3:::codepipeline-empower-energy-${Environment}-bucket/*"
+                  - !Sub "arn:aws:s3:::codepipeline-empower-energy-${Environment}-bucket-${AWS::AccountId}"
+                  - !Sub "arn:aws:s3:::codepipeline-empower-energy-${Environment}-bucket-${AWS::AccountId}/*"
               - Effect: Allow
                 Action:
                   - "ec2:Describe*"
